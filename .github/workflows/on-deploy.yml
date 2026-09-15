@@ -1,0 +1,40 @@
+# The Actions <-> Vercel handshake.
+# Vercel deploys, then tells GitHub via a "deployment_status" event that carries
+# the live URL. This workflow reacts to that event, reads the URL, and checks it.
+#
+# NOTE: like `schedule`, a `deployment_status` workflow only fires when the file
+# is on the DEFAULT branch (main). So this won't run from a PR branch — you'll
+# see it fire right after you merge to main (the merge triggers a Vercel deploy).
+name: On Deploy
+
+on:
+  deployment_status:
+
+jobs:
+  react-to-deploy:
+    # deployment_status fires for pending / in_progress / success / failure.
+    # Only act on a SUCCESSFUL deploy.
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show what Vercel told us
+        run: |
+          echo "state:            ${{ github.event.deployment_status.state }}"
+          echo "environment:      ${{ github.event.deployment_status.environment }}"
+          echo "environment_url:  ${{ github.event.deployment_status.environment_url }}"
+          echo "target_url:       ${{ github.event.deployment_status.target_url }}"
+          echo "log_url:          ${{ github.event.deployment_status.log_url }}"
+
+      - name: Smoke-check the deployed URL responds
+        env:
+          # environment_url is the live site URL Vercel deployed. We fall back to
+          # target_url just in case, and skip gracefully if neither is present.
+          DEPLOY_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        run: |
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "No deploy URL in the event — printing the payload above tells us which field Vercel uses."
+            exit 0
+          fi
+          echo "Checking $DEPLOY_URL ..."
+          curl -sSf -o /dev/null -w "HTTP %{http_code}\n" "$DEPLOY_URL"
+          echo "✅ Reached the deployed site."
